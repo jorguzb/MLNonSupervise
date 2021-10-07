@@ -1,0 +1,300 @@
+---
+title: "Analyse exploratoire - ML Non Supérvisé"
+output: html_document
+---
+### Data et librairies
+
+"db_imp" est un dataset avec 100k observations imputées afin d'éliminer les données manquantes 
+grâce à la librairie "miceranger", la quelle se base sur de random forest pour imputer les NA.
+
+"db_job" est un dataset avec 39754 observations, il s'agit du périmètre de salaries (personnes actives).
+
+"learn_code" est un datasets avec 100k observations avec des données manquantes.
+
+"db_job_clust" est une datasets avec  les clusters k-means réalisé avec l'aide de la library (kamila) (périmètre des salaries)
+
+```{r}
+library(reshape2)
+library(ggplot2)
+library(viridis)
+library(corrplot)
+library(multcompView)
+
+db_imp = read.csv("datasets/db_imp_code.csv")
+db_job = read.csv("datasets/learn_job_pred.csv")
+learn_code = read.csv("datasets/learn_code.csv",encoding = "UTF-8")
+``` 
+### 1. Caractérisation des données
+L'objectif de ce chapitre est de caractériser la data en fonction des departements. 
+Dans cette partie aucune imputation a été faite. le choix de la médiane a été fait car les données n'ont pas une distribution symétrique.
+En prenand la médiane de l'emolument, de l'age, du nombre d'heurs travaillé et la répartition des étudiants par département
+des clusters sont constatés. En revanche, la répartition des hommes et des fammes ne permet pas la construction des clusters par département.
+Pour les variables catégoriques deux tableau sont fait en fonction des départements, a) Croissement entre le département et les modalitées de la variable en fonction de la médiane de l'emolument; b) même croissement en fontion du nombre des observations. Visuelment des differences sont constatées entre les départements, un exemple est la difference entre Hauts-des-seine et la Seine-saint-Dennis (deux départements proche geographiquement). 
+Dans le chapitre suivant la différence entre départements sera observé statistiquement.
+
+```{r, include = FALSE}
+emol_med_dep = dcast(data = learn_code,
+                    Nom.du.département ~ "EMOLUMENT_MED",
+                    value.var = "EMOLUMENT",
+                    fun.aggregate = function(x) median(as.double(x), na.rm= TRUE))
+age_med_dep = dcast(data = learn_code,
+                    Nom.du.département ~ "AGE_MED",
+                    value.var = "Age_2019",
+                    fun.aggregate = function(x) median(as.double(x), na.rm= TRUE))
+nhours_med_dep = dcast(data = learn_code,
+                       Nom.du.département ~ "NHOURS_MED",
+                       value.var = "WORKING_HOURS",
+                       fun.aggregate = function(x) median(as.double(x), na.rm= TRUE))
+netud_dep = dcast(data = learn_code,
+                  Nom.du.département ~ Is_student)
+
+etud_per = netud_dep[,3]/(netud_dep[,2]+netud_dep[,3]) * 100
+per_etud_dep = data.frame("Nom.du.département" = netud_dep[,1], "ETUD_PERCENTAGE" = etud_per)
+# Corrplot
+plotTab = function(variable, compte = FALSE) {
+    if(!compte) {
+        titulo = paste0(variable, "- mediana" )
+        dep_occ = reshape2::dcast(data = learn_code[-which(is.na(learn_code$EMOLUMENT)),],
+                        formula(paste0("Nom.du.département ~ ",variable)),
+                        value.var = "EMOLUMENT",
+                        fun.aggregate = function(x) median(as.double(x), na.rm= TRUE))
+    }
+    if (compte) {
+        titulo = paste0(variable, "- compte" )
+        dep_occ = reshape2::dcast(data = learn_code[-which(is.na(learn_code$EMOLUMENT)),],
+                    formula(paste0("Nom.du.département ~ ",variable)))
+    }
+    rownames(dep_occ) = dep_occ[,1]
+    m = as.matrix(dep_occ[,-c(1, ncol(dep_occ))])
+    corrplot::corrplot(t(m), is.corr = FALSE, title = titulo, col=colorRampPalette(c("blue","red"))(200))
+}
+# 
+data_plot0 = merge(learn_code, emol_med_dep, by = "Nom.du.département", all.X= TRUE)
+data_plot1 = merge(data_plot0, age_med_dep, by = "Nom.du.département", all.X= TRUE)
+data_plot2 = merge(data_plot1, nhours_med_dep, by = "Nom.du.département", all.X= TRUE)
+data_plot3 = merge(data_plot2, per_etud_dep, by = "Nom.du.département", all.X= TRUE)
+data_job = data_plot3[-which(is.na(data_plot0$EMOLUMENT)),]
+# Plots
+plot_generator = function() {
+     pdf("caracterisation_region_dep.pdf", width = 17, height = 5)
+        # Emolument
+        # p = ggplot(data = data_job, aes(x = X, y = Y, colour = EMOLUMENT)) +
+        #     geom_point(na.rm = TRUE) +
+        #     scale_color_viridis(option = "D")
+        #print(p)
+        # Emolument-mediane
+        p = ggplot(data = data_job, aes(x = X, y = Y, colour = EMOLUMENT_MED)) +
+            geom_point() +
+            scale_color_viridis(option = "D")
+        print(p)
+        # Age_mediane
+        p = ggplot(data = data_job, aes(x = X, y = Y, colour = AGE_MED)) +
+            geom_point() +
+            scale_color_viridis(option = "D")
+        print(p)
+        # No. heures travaillé-mediane
+        p = ggplot(data = data_job, aes(x = X, y = Y, colour = NHOURS_MED)) +
+            geom_point() +
+            scale_color_viridis(option = "D")
+        print(p)
+        # Etudiant-Pourcentage 
+        p = ggplot(data = data_job, aes(x = X, y = Y, colour = ETUD_PERCENTAGE)) +
+            geom_point() +
+            scale_color_viridis(option = "D")
+        print(p)
+        # Sex
+        p = ggplot(data=learn_code) +
+            geom_point(aes(x=X, y=Y, col = SEX)) +
+            ggtitle("Repartition des hommes et des fammes par département")
+        print(p)
+        # Tab occupation_42
+        plotTab("Occupation_42")
+        plotTab("Occupation_42", compte = TRUE)
+        # Tab N2
+        plotTab("N2")
+        plotTab("N2", compte = TRUE)
+        # Tab Job_cond
+        plotTab("JOB_CONDITION")
+        plotTab("JOB_CONDITION", compte = TRUE)
+        # Terms_of_emp
+        plotTab("Terms_of_emp")
+        plotTab("Terms_of_emp", compte = TRUE)
+        # Highest degree
+        plotTab("highest_degree")
+        plotTab("highest_degree", compte = TRUE)
+     dev.off()
+}
+```
+Ici les plots.
+```{r}
+#plot_generator()
+``` 
+
+### 2. Différence statistique entre départements
+L'objectif de cette partie est de pouvoir confirmer statistiquement les résultats de la data visualisation.
+Deux analyses sont réalisés, Anova pour les variables numériques et chi^2 pour les variables catégoriques.
+La statistique confirme ce qui a été observé dans la première partie. 
+Par exemple, pour la variable "sex" le test de chi^2 montre qu'il n'y a pas de dépendance entre le sex et les départements. En revanche, il existe une dépendance entre les départements et la densité des étudiants.
+La "lm" permet d'identifier des différence entre les départements et le departement de réference (intercept) "Ain" en fonction de la variable utilisé pour la régression. Par exemple, les departements comme "Alpes-de-haute-provence", "Allier" et tous les autre pour lesquels la p-value est grande sont des départements sans différence significative de salaire avec "Ain".  
+
+```{r}
+testGeographicNum  = function(variable, db) {
+
+                    mod = lm(data = db, 
+                            formula(paste0(variable, "~ Nom.du.département")))
+                    s = summary(mod)
+                    print(s)
+}
+testGeographicCat = function(variable1, db) {
+                    tab_cont = table(db[,variable1], db[,"Nom.du.département"])
+                    preuve = chisq.test(tab_cont, simulate.p.value = TRUE)
+                    print(preuve)
+}
+testGeographicNum("EMOLUMENT", db = learn_code)# Il y a des différences significative entre departement
+testGeographicNum("Age_2019", db = learn_code)# Il y a des différences significative entre departement
+testGeographicNum("WORKING_HOURS", db = learn_code)# Il y a des différences significative entre departement
+testGeographicCat("Is_student", db = learn_code)# Dépendance entre la variable et les départements
+testGeographicCat("SEX", db = learn_code)# il n'y a pas de Dépendance entre la variable et les départements
+testGeographicCat("Occupation_42", db = learn_code)# Dépendance entre la variable et les départements
+testGeographicCat("N2", db = learn_code)# Dépendance entre la variable et les départements
+testGeographicCat("Terms_of_emp", db = learn_code)# Dépendance entre la variable et les départements
+testGeographicCat("JOB_CONDITION", db = learn_code)# Dépendance entre la variable et les départements
+testGeographicCat("highest_degree", db = learn_code)# Dépendance entre la variable et les départements
+```
+
+### 3. Clusters en utilisant le dataset imputé sur des variables numéiques
+# 3.1 K-means : 
+le K optimal après le digrame du coude est de 4 clusters. En utilisant uniquement les variables numériques, les clusters ne sont pas observablés.
+```{r}
+set.seed(123)
+# Compute and plot wss for k = 2 to k = 15.
+k.max = 15
+data = db_imp[,c("Age_2019", "EMOLUMENT", "WORKING_HOURS")]
+# wss = sapply(1:k.max,
+#              function(k){kmeans(data, k, nstart = 50, iter.max = 15 )$tot.withinss})
+# save(wss, file = "wss.RData")
+load("wss.RData")
+plot(1:k.max, wss,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+db_imp_num = db_imp[,c("Age_2019", "EMOLUMENT", "WORKING_HOURS")]
+clust3 = kmeans(db_imp_num, 3)
+db_imp_num$clust3 = clust3$cluster
+var_per3 = clust3$betweenss / clust3$totss
+clust4 = kmeans(db_imp_num, 4)
+db_imp_num$clust4 = clust4$cluster
+var_per4 = clust4$betweenss / clust4$totss
+clust5 = kmeans(db_imp_num, 10)
+db_imp_num$clust5 = clust5$cluster
+var_per5 = clust5$betweenss / clust5$totss
+db_imp_num$X = db_imp$X
+db_imp_num$Y = db_imp$Y
+
+ggplot(db_imp_num, aes(X, Y, color = as.factor(clust3))) +
+    geom_point() + ggtitle(paste0("Variance explained: ", var_per3))
+ggplot(db_imp_num, aes(EMOLUMENT, Age_2019, color = as.factor(clust3))) +
+    geom_point() + ggtitle(paste0("Variance explained: ", var_per3))
+ggplot(db_imp_num, aes(EMOLUMENT, WORKING_HOURS, color = as.factor(clust3))) +
+    geom_point() + ggtitle(paste0("Variance explained: ", var_per3))
+ggplot(db_imp_num, aes(EMOLUMENT, WORKING_HOURS, color = as.factor(clust3))) +
+    geom_point() + ggtitle(paste0("Variance explained: ", var_per3))
+ggplot(db_imp_num, aes(X, Y, color = as.factor(clust4))) +
+    geom_point() + ggtitle(paste0("Variance explained: ", var_per4))
+ggplot(db_imp_num, aes(X, Y, color = as.factor(clust5))) +
+    geom_point() + ggtitle(paste0("Variance explained: ", var_per5))
+
+
+```
+#3.2 Hierarchical clustering : 
+Grâce au graphe du coude le nombre de cluster optimal est de 5 en utilisant cette méthode.
+Afin de pouvoir conturné les problèmes de RAM l'algoritme est tester avec 1% du dataset.
+
+```{r}
+library(dendextend)
+set.seed(123)
+db_imp_num = db_job[, c("Age_2019", "EMOLUMENT", "WORKING_HOURS")]
+ind = sample(1:nrow(db_imp_num), 
+             size = floor(0.01*nrow(db_imp_num)), 
+             replace = FALSE)
+db_clust = db_imp_num[ind,]
+d = dist(db_clust, method = "euclidean")# Distance matrix
+hc = hclust(d, method = "ward.D2")
+dend = as.dendrogram(hc) %>% color_branches(k = 5)
+plot(dend)
+#db_clust$hc = labels
+inertie <- sort(hc$height, decreasing = TRUE)
+plot(inertie[1:20], 
+     type = "s", xlab = "Nombre de classes par Hclust", ylab = "Inertie",lwd=2)
+grid()
+k = 5
+abline(v=k,col="red",lty=3)
+points(k,inertie[k],pch=16,cex=2,col="red")
+```
+#3.3 Performing DBSCAN : 
+Afin de pouvoir conturné les problèmes de RAM l'algoritme est tester avec 10% du dataset
+-Avec un epsilon de 100 (en couluers) il est possible d'utiliser cette méthode pour la construction de clusters mais il restent beaucoup des observation sans clusteriser (point en noir)
+_Avec un epsilon de 1000 (en rouge) il n'est pas possible d'utiliser cette méthode car un suele clusters est réalisé par l'altgortime.
+
+Ce résult permet de penser qu'il conviendra diviser le dataset afin d'avoir deux dataset avec des caractérisque similaire donc à l'intérieur de chaque data l'information sera plus comparablé.  
+```{r}
+library(fpc)
+library(dbscan)
+set.seed(123)
+ind = sample(1:nrow(db_imp_num),
+             size = floor(0.1*nrow(db_imp_num)),
+             replace = FALSE)
+db_dbscan = db_imp_num[ind,]
+dbs = fpc::dbscan(db_dbscan, 100, MinPts = 5)
+plot(dbs, db_dbscan, main = "DBSCAN", frame = FALSE)
+dbs = fpc::dbscan(db_dbscan, 1000, MinPts = 5)
+plot(dbs, db_dbscan, main = "DBSCAN", frame = FALSE)
+dbscan::kNNdistplot(db_dbscan, k =  5)
+abline(h = 250, lty = 2)
+abline(h = 1000, lty = 2)
+```
+### 4 K-means sur l'ensemble des variables
+En utilisant que les variables numériques les clusters ne sont pas identifiables et ce constat est la même indépendamment de l'algoritme utilisé pour cette raison il est nécessaire d'utiliser l'ensemble de variables donc le K-means pour data mixte est utilisée à l'aide de la librairy "kamila"  
+Pour des raisons de resources (RAM) les clusters seront faits sur le périmètre de salaries (personnes actives).
+
+```{r}
+library (kamila)
+# kmeans_job5 = mixedDataClusteringKmeans(db_job, 5, importance = 0.5)
+# kmeans_job10 = mixedDataClusteringKmeans(db_job, 10, importance = 0.5)
+# kmeans_job15 = mixedDataClusteringKmeans(db_job, 15, importance = 0.5)
+# db_job$K5 = as.factor(kmeans_job5$cluster)
+# db_job$K10 = as.factor(kmeans_job10$cluster)
+# db_job$K15 = as.factor(kmeans_job15$cluster)
+# write.csv(db_job, "datasets/db_job_cluster.csv", row.names=F)
+db_job_clust = read.csv("datasets/db_job_cluster.csv")
+#db_job_clust=db_imp
+``` 
+#Geographique clusters
+
+Ci-dessous les clusters par département en utilisant toutes les variables sur le perimètre de perssonnes acttives (salaires).
+La variance expliqué avec 3 ou 5 clusters est trés proche (94%). 
+En revanche, le diagrame du coude permet de constater que le meilleur niveau de k est 5.
+il est aussi observablé une réaprtition des clusters plus proche à la réalité du pays en fonction du salaire, il est constaté dans la carte ci-dessous des clusters :
+-en Ille de France
+_dans la côte sud
+-
+
+
+```{r}
+library(ggplot2)
+
+plot(c(0,3,5,10,15),c(100,100-db_job_clust[1,c(35,37,39,41)]), type = "l", ylab = "ss", xlab = "k", main = "Elbow graph for mixed K-means")
+points(c(0,3,5,10,15),c(100,100-db_job_clust[1,c(35,37,39,41)]))
+
+# result_map = map_data("france")
+# map = ggplot() + geom_polygon(result_map, mapping = aes(long, lat, group = group, fill = group)) + coord_map() 
+# map + geom_point(data = db_job_clust,aes(x=long, y=Lat, colour = (K10)))# + ggtitle(paste0("VAR EXP ",as.character(unique(db_job_clust$var_exp3)),"%, K=3"))
+ggplot(data = db_job_clust) + geom_point(aes(x = X, y = Y, col = as.factor(K3))) + ggtitle(paste0("VAR EXP ",as.character(unique(db_job_clust$var_exp5)),"%, K=3"))
+ggplot(data = db_job_clust) + geom_point(aes(x = X, y = Y, col = as.factor(K5))) + ggtitle(paste0("VAR EXP ",as.character(unique(db_job_clust$var_exp5)),"%, K=5"))
+ggplot(data = db_job_clust) + geom_point(aes(x = X, y = Y, col = as.factor(K10))) + ggtitle(paste0("VAR EXP ",as.character(unique(db_job_clust$var_exp10)),"%, K=10"))
+ggplot(data = db_job_clust) + geom_point(aes(x = X, y = Y, col = as.factor(K15))) + ggtitle(paste0("VAR EXP ",as.character(unique(db_job_clust$var_exp15)),"%, K=15"))
+``` 
+####Carte de la France 
+
+![Map of France.](https://upload.wikimedia.org/wikipedia/commons/0/01/France_d%C3%A9partementale.svg)
